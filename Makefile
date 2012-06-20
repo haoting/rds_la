@@ -2,7 +2,6 @@
 REBAR=./rebar
 
 compile:
-	@rm -f -r rel/rds_la
 	@$(REBAR) get-deps compile
 	@$(REBAR) generate
 
