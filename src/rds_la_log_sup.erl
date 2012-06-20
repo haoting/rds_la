@@ -60,7 +60,6 @@ services_specs()->
     HaveStoreService = rds_la_config:have_service(rds_la_store),
     HaveControllerService = rds_la_config:have_service(rds_la_controller),
     HaveClientService = rds_la_config:have_service(rds_la_client),
-    ControllerDstNPList = rds_la_config:la_controller_dstnps(),
     [Spec || {Spec, Enable} <-
     [
         {rds_la_tlog_sup_spec(),                         HaveStoreService},
@@ -69,7 +68,7 @@ services_specs()->
         {rds_la_store_spec(),                            HaveStoreService},
         {rds_la_controller_spec(),                       HaveControllerService},
         {rds_la_network_sup_spec(),                      HaveControllerService or HaveStoreService},
-        {rds_la_client_sup_spec(ControllerDstNPList),    HaveClientService}
+        {rds_la_client_sup_spec(),                       HaveClientService}
     ],
         Enable =:= true
     ].
@@ -96,5 +95,5 @@ rds_la_gen_indexer_sup_spec() ->
 rds_la_tlog_sup_spec() ->
 	?CHILD3(rds_la_tlog_sup, worker, rds_la_epoolsup, rds_la_tlog_sup_start, []).
 
-rds_la_client_sup_spec(ControllerDstNPList) ->
-	?CHILD2(rds_la_client_sup, worker, rds_la_client_sup, [ControllerDstNPList]).
+rds_la_client_sup_spec() ->
+	?CHILD(rds_la_client_sup, supervisor).

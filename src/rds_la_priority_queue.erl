@@ -59,4 +59,3 @@ do_replace(Q = #priority_queue{gbt = T}, K, V) ->
         _ -> gb_trees:update(LK, LVList, T)
     end,
     do_push(Q#priority_queue{gbt = NT},K, V).
-

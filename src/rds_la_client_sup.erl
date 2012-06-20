@@ -14,7 +14,7 @@
 %% --------------------------------------------------------------------
 %% External exports
 %% --------------------------------------------------------------------
--export([start_link/1]).
+-export([start_link/0]).
 -export([new_controller_client/0, new_store_client/0]).
 
 %% --------------------------------------------------------------------
@@ -43,8 +43,8 @@
 %% External functions
 %% ====================================================================
 
-start_link(ControllerDstNPList) ->
-    supervisor:start_link({local, ?MODULE}, ?MODULE, [ControllerDstNPList]).
+start_link() ->
+    supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 new_controller_client() ->
     rds_la_controller_protocol:new_controller_client(?CONTROLLER_CLIENT_PREFIX).
@@ -62,12 +62,13 @@ new_store_client() ->
 %%          {error, Reason}
 %% --------------------------------------------------------------------
 
-init([ControllerDstNPList]) ->
-    ServiceSpecs = services_specs(ControllerDstNPList),
+init([]) ->
+    ServiceSpecs = services_specs(),
     ?DEBUG("ServiceSpecs: ~n~p~n", [ServiceSpecs]),
     {ok, {{one_for_one, 5, 10}, ServiceSpecs}}.
 
-services_specs(ControllerDstNPList)->
+services_specs()->
+    ControllerDstNPList = rds_la_config:la_controller_dstnps(),
     [
         rds_la_controller_client_back_sup_spec(ControllerDstNPList),
         rds_la_controller_client_spec(),
