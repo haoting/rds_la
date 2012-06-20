@@ -32,11 +32,11 @@ init_index() ->
 
 init_index(TopN) ->
 	#dump_slow_state{topn = TopN,
-					 pq = priority_queue:new(TopN, 
+					 pq = rds_la_priority_queue:new(TopN, 
 					     fun(Record) -> -Record#la_record.response_time end)}.
 
 add_to_index(State = #dump_slow_state{pq = PQ}, Record) ->
-	State#dump_slow_state{pq = priority_queue:push(PQ, Record)}.
+	State#dump_slow_state{pq = rds_la_priority_queue:push(PQ, Record)}.
 
 merge_index(#dump_slow_state{topn = TopN1, pq = PQ1}, 
 			#dump_slow_state{topn = TopN2, pq = PQ2}) ->
@@ -46,7 +46,7 @@ merge_index(#dump_slow_state{topn = TopN1, pq = PQ1},
               add_to_index(NState, Record)
       end,
       init_index(TopN),
-	  merge_records(priority_queue:to_list(PQ1), priority_queue:to_list(PQ2), TopN, [])).
+	  merge_records(rds_la_priority_queue:to_list(PQ1), rds_la_priority_queue:to_list(PQ2), TopN, [])).
 
 merge_records(_, _, 0, Acc) -> Acc;
 merge_records(L1 = [H1|T1], L2 = [H2|T2], N, Acc) ->
@@ -62,7 +62,7 @@ merge_records([H|T], [], N, Acc) -> merge_records(T, [], N-1, [H|Acc]);
 merge_records([], [], _, Acc) -> Acc.
 
 query_index(#dump_slow_state{pq = PQ}, QueryOpts) ->
-    filter_dump_slow(priority_queue:to_list(PQ), QueryOpts).
+    filter_dump_slow(rds_la_priority_queue:to_list(PQ), QueryOpts).
 
 from_result(Result) ->
     lists:foldl(

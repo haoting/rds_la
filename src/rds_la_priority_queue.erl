@@ -3,7 +3,7 @@
 %% Description: TODO: Add description to pq
 %% -*- erlang-indent-level: 4;indent-tabs-mode: nil -*-
 %% ex: ts=4 sw=4 et
--module(priority_queue).
+-module(rds_la_priority_queue).
 
 -export([new/0, new/1, new/2]).
 -export([push/2, size/1, to_list/1]).
@@ -59,3 +59,4 @@ do_replace(Q = #priority_queue{gbt = T}, K, V) ->
         _ -> gb_trees:update(LK, LVList, T)
     end,
     do_push(Q#priority_queue{gbt = NT},K, V).
+
