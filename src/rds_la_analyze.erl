@@ -10,14 +10,14 @@
 -define(APPNAME, rds_la).
 
 init() ->
-%	case code:priv_dir(?APPNAME) of
-%		{error, _} ->
-%			error_logger:format("~w priv dir not found~n", [?APPNAME]),
-%			exit(error);
-%		PrivDir ->
-%			erlang:load_nif(filename:join([PrivDir, "rds_la_analyze_nifs"]), 0)
-%	end.
-	erlang:load_nif(filename:join(["./priv", "rds_la_analyze_nifs"]), 0).
+	case code:priv_dir(?APPNAME) of
+		{error, _} ->
+			error_logger:format("~w priv dir not found~n", [?APPNAME]),
+			exit(error);
+		PrivDir ->
+			erlang:load_nif(filename:join([PrivDir, "rds_la_analyze_nifs"]), 0)
+	end.
+%	erlang:load_nif(filename:join(["./priv", "rds_la_analyze_nifs"]), 0).
 
 analyze_log(_Data) ->
 	erlang:nif_error(nif_not_loaded).
