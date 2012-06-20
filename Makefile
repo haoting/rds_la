@@ -1,21 +1,38 @@
 
-
-ERLC = erlc
-ERL = erl
+REBAR=./rebar
 GCC = gcc
 
-all:
+compile:
+	@rm -f -r rel/rds_la
 	$(GCC) -o priv/rds_la_analyze_nifs.so -fpic -shared -I/usr/local/lib/erlang/usr/include ./c_src/rds_la_analyze.c
-	cp src/rds_la.app.src ebin/rds_la.app
-	$(ERLC) -I include -pa ebin -o ebin src/*.erl
-
-run:
-	$(ERL) -pa ebin -config sys.config -args_file vm.args
+	@$(REBAR) get-deps compile
+	@$(REBAR) generate
 
 clean:
-	rm ebin/* -rf
+	@$(REBAR) clean
+	@rm -f test/*.beam
+	@rm -f -r logs rel/rds_la
+	@rm -f -r deps
 
-cleandb:
-	rm -f initialized_file
-	rm -rf Mnesia.*
-	rm -rf ladir/*
+build_plt:
+	-@dialyzer -pa deps/mochiweb/ebin --build_plt \
+	--apps erts kernel stdlib sasl mnesia compiler \
+	crypto runtime_tools eunit mochiweb inets ssl \
+	xmerl syntax_tools public_key sasl hipe os_mon tools
+
+check:  compile
+	-@${REBAR} xref
+	-@dialyzer ebin --verbose -Wunmatched_returns -Werror_handling -Wrace_conditions
+
+test:   compile
+	@rm -rf .eunit
+	@mkdir -p .eunit
+	@$(REBAR) skip_deps=true eunit
+	@$(REBAR) ct
+
+run:
+	@rel/rds_la/bin/rds_la console
+
+eunit:
+	@$(REBAR) skip_deps=true eunit
+

@@ -1,0 +1,107 @@
+#!/usr/local/bin/escript
+%usage() ->
+%	io:format("lalog_to_json <from_file_name> <to_file_name>~n").
+
+
+%-module(lalog_to_json).
+%-compile(export_all).
+
+-define(HEADER, "rds_la_logs").
+-define(ENTRY, "rds_la_log").
+-define(USER, "user").
+-define(TIMESTAMP, "timestamp").
+-define(QUERYTIME, "querytime").
+-define(QUERY, "query").
+
+-record(la_record, {user, timestamp, 'query', query_time, response_time}).
+
+myerror(Info) ->
+	io:format("Failed, Exited with ~p~n", [Info]).
+
+main([FromFilename, ToFilename]) ->
+	case file:read_file_info(FromFilename) of
+		{error, Reason} -> myerror(Reason);
+		none -> error("no read privilage");
+		_ ->
+			case parse_file(FromFilename, ToFilename) of
+				{error, Reason} -> myerror(Reason);
+				Entries ->
+					io:format("Success, Total Entries ~p~n", [Entries])
+			end
+	end.
+
+parse_file(FromFileName, ToFilename) ->
+	case file:open(FromFileName, [raw, binary, read]) of
+		{error, Reason} ->
+			{error, Reason};
+		{ok, FromFD} ->
+			case file:open(ToFilename, [raw, append]) of
+				{error, Reason} ->
+					file:close(FromFD),
+					{error, Reason};
+				{ok, ToFD} ->
+					add_header(ToFD),
+					Res = parse_log_entries(FromFD, ToFD),
+					file:close(FromFD),
+					case Res of
+						{error, Reason} ->
+							file:close(ToFD),
+							file:delete(ToFilename),
+							{error, Reason};
+						_ ->
+							add_tail(ToFD),
+							file:close(ToFD),
+							Res
+					end
+			end
+	end.
+
+parse_log_entries(FromFD, ToFD) ->
+	parse_log_entries(FromFD, ToFD, 0).
+
+parse_log_entries(FromFD, ToFD, OEntries) ->
+	case file:read(FromFD, 4) of
+		{ok, <<_TS:32>>} ->
+			{ok, <<_NO:32>>} = file:read(FromFD, 4),
+			{ok, <<Size:32>>} = file:read(FromFD, 4),
+			{ok, <<Binary/binary>>} = file:read(FromFD, Size),
+			{ok, <<255:8>>} = file:read(FromFD, 1),
+			Type = case OEntries of
+				0 -> first;
+				_ -> next
+			end,
+			LARecord = binary_to_term(Binary),
+			%io:format("LARecord: ~p~n", [LARecord]),
+			case write_json_file(ToFD, Type, LARecord) of
+				{error, Reason} -> {error, Reason};
+				_ -> parse_log_entries(FromFD, ToFD, OEntries + 1)
+			end;
+		eof -> OEntries
+	end.
+
+write_json_file(ToFD, Type, #la_record{user = User, timestamp = TS, query_time = QueryTime, 'query' = Query}) ->
+	add_record(ToFD, Type, User, TS, QueryTime, Query).
+
+add_header(ToFD) ->
+	file:write(ToFD, list_to_binary(io_lib:format("{~p:[~n", [?HEADER]))).
+add_tail(ToFD) ->
+	file:write(ToFD, list_to_binary(io_lib:format("]}~n", []))).
+add_record(ToFD, Type, User, TS, QueryTime, Query) ->
+	Record = construct_record(Type, User, TS, QueryTime, Query),
+	case file:write(ToFD, Record) of
+		{error, Reason} -> {error, Reason};
+		_ -> byte_size(Record)
+	end.
+construct_record(first, User, TS, QueryTime, Query) ->
+	list_to_binary(io_lib:format("    ~p:{~p:~p, ~p:~p, ~p:~p, ~p: \"~s\"}",
+		[?ENTRY, ?USER, User, ?TIMESTAMP, TS, ?QUERYTIME, QueryTime, ?QUERY, Query]));
+construct_record(next, User, TS, QueryTime, Query) ->
+	list_to_binary(io_lib:format(",~n    ~p:{~p:~p, ~p:~p, ~p:~p, ~p: \"~s\"}",
+		[?ENTRY, ?USER, User, ?TIMESTAMP, TS, ?QUERYTIME, QueryTime, ?QUERY, Query])).
+
+
+
+
+
+
+
