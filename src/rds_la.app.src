@@ -1,0 +1,13 @@
+{application, rds_la,
+ [
+  {description, ""},
+  {vsn, "1"},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib,
+                  mnesia
+                 ]},
+  {mod, { rds_la_app, []}},
+  {env, []}
+ ]}.
