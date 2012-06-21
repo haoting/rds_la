@@ -26,8 +26,8 @@
 -define(SERVER, rds_la_controller_client).
 -define(USER_APPEND_DSTNP_CACHE, user_append_dstnp_cache).
 -define(USER_QUERY_DSTNP_CACHE, user_query_dstnp_cache).
-%-define(APING_CONTROLLER_INTERVAL, 30 * 60 * 1000). %% 30 minutes
--define(APING_CONTROLLER_INTERVAL,      20 * 1000). %% 20 seconds for test
+-define(APING_CONTROLLER_INTERVAL, 30 * 60 * 1000). %% 30 minutes
+%-define(APING_CONTROLLER_INTERVAL,      20 * 1000). %% 20 seconds for test
 
 %%
 %% API Functions
@@ -207,7 +207,7 @@ handle_remote(_From, {reply, Reply}, ModState) ->
 
 %% for controller
 handle_remote(_From, {get_user_nodes, User}, ModState) ->
-    timer:sleep(20 * 1000),                                %% for test
+%    timer:sleep(20 * 1000),                                %% for test
     UserNodes = case rds_la_api:get_user_nodes(User) of
         {error, _Reason} -> [];
         UN -> UN
