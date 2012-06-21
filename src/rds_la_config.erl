@@ -18,11 +18,12 @@
 -export([get_cluster_nodes/0, set_cluster_nodes/1]).
 -export([have_service/1, service_nodes/1, service_nodes_env/1]).
 -export([proxy_id_list/0]).
--export([la_dir/0, la_indexers/0, la_log_max_kept_days/0, la_dump_slow_topn/0]).
+-export([la_store_dir/0, la_controller_dir/0, la_indexers/0, la_log_max_kept_days/0, la_dump_slow_topn/0]).
 -export([la_controller_listen_port/1, la_store_listen_port/1]).
 
 -define(DEFAULT_CLUSTER_NODES, []).
--define(DEFAULT_LA_DIR, "/tmp/rds/ladir").
+-define(DEFAULT_LA_STORE_DIR, "/tmp/rds/ladir").
+-define(DEFAULT_LA_CONTROLLER_DIR, "/tmp/rds/lacdir").
 -define(DEFAULT_LA_INDEXERS, []).
 -define(DEFAULT_LA_LOG_MAX_KEPT_DAYS, 30).
 -define(DEFAULT_LA_DUMP_SLOW_TOPN, 100).
@@ -89,8 +90,11 @@ service_nodes_env(Service) ->
         ServiceConfig -> get_args(node, ServiceConfig)
     end.
 
-la_dir()->
-	get_node_service_config(rds_la, rds_la_store, node(), dir, ?DEFAULT_LA_DIR).
+la_store_dir()->
+	get_node_service_config(rds_la, rds_la_store, node(), dir, ?DEFAULT_LA_STORE_DIR).
+
+la_controller_dir() ->
+	get_node_service_config(rds_la, rds_la_controller, node(), dir, ?DEFAULT_LA_CONTROLLER_DIR).
 
 la_indexers() ->
     get_service_config(rds_la, rds_la_indexers, ?DEFAULT_LA_INDEXERS).

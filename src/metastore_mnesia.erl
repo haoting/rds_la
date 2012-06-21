@@ -25,8 +25,8 @@
 %%
 %% Exported Functions
 %%
--export([init/2, init_read_only/2, terminate/1]).
--export([current_version/0, create_table/1]).
+-export([init/2, init_read_only/2, terminate/2]).
+-export([current_version/0, create_table/1, mnesia_dir/0]).
 -export([backup_online/2, backup_online/3, restore_online/3, upgrade_online/2]).
 
 -export([behaviour_info/1]).
@@ -61,6 +61,15 @@ behaviour_info(callbacks) ->
         %%          false                                                  |
         %% ----------------------------------------------------------
         {is_inited, 0},
+
+        %% ------------------------------------------------------------
+        %% Function: running_disc_nodes/0
+        %% Proto: running_disc_nodes()
+        %% Description: Get running disc nodes currently
+        %% Returns:
+        %%          Node list
+        %% ----------------------------------------------------------
+        {disc_nodes, 0},
 
         %% ------------------------------------------------------------
         %% Function: current_versions/0
@@ -117,11 +126,11 @@ init_read_only(ExtraNodes, Mod) ->
     ensure_mnesia_running(),
     init_db_read_only(ExtraNodes, Mod).
 
-terminate(Nodes) ->
+terminate(Nodes, Mod) ->
     WantDiscNode = should_be_disc_node(Nodes),
     case WantDiscNode of
         true ->
-            record_running_nodes();
+            record_running_nodes(Mod);
         false ->
             ok
     end,
@@ -620,7 +629,7 @@ is_disc_node() -> mnesia:system_info(use_dir).
 should_be_disc_node(Nodes) ->
     Nodes == [] orelse lists:member(node(), Nodes).
 
-running_clustered_nodes() ->
+running_mnesia_nodes() ->
     mnesia:system_info(running_db_nodes).
 
 all_clustered_nodes() ->
@@ -877,13 +886,24 @@ unlock_file(Path) ->
 running_nodes_filename() ->
     filename:join(mnesia_dir(), ?RUNNING_NODES_FILENAME).
 
-record_running_nodes() ->
+record_running_nodes(Mod) ->
     FileName = running_nodes_filename(),
-    Nodes = running_clustered_nodes() -- [node()],
+    RunningDiscNodes = running_disc_nodes(Mod) -- [node()],
     %% Don't check the result: we're shutting down anyway and this is
     %% a best-effort-basis.
-    file_util:write_file_term(FileName, Nodes),
+    file_util:write_file_term(FileName, RunningDiscNodes),
     ok.
+
+running_disc_nodes(Mod) ->
+    DiscNodes = Mod:disc_nodes(),
+    RunningMnesiaNodes = running_mnesia_nodes(),
+    lists:foldl(
+        fun(RunningMnesiaNode, Acc) ->
+            case lists:member(RunningMnesiaNode, DiscNodes) of
+                true -> [RunningMnesiaNode|Acc];
+                false -> Acc
+            end
+        end, [], RunningMnesiaNodes).
 
 read_previously_running_nodes() ->
     FileName = running_nodes_filename(),

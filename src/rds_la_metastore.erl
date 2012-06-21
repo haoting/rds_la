@@ -13,7 +13,7 @@
 %%
 %% Exported Functions
 %%
--export([is_running/1, is_inited/0, current_versions/0, table_definitions/0, table_upgrade/0]).
+-export([is_running/1, is_inited/0, disc_nodes/0, current_versions/0, table_definitions/0, table_upgrade/0]).
 -export([initialize/0, deinitialize/0]).
 
 -export([all_user/0, all_user_on_node_for_query/1, all_user_on_node_for_append/1]).
@@ -50,6 +50,9 @@ is_inited() ->
     Initialize = initialized_file_exist(),
     ?DEBUG("Initialize: ~p~n", [Initialize]),
     Initialize.
+
+disc_nodes() ->
+    rds_la_config:service_nodes(rds_la_controller).
 
 current_versions() ->
     ['V1'].
@@ -88,7 +91,7 @@ table_upgrade('V2') ->
     ].
 
 initialized_file() ->
-    {ok, PWD} = file:get_cwd(),
+    PWD = metastore_mnesia:mnesia_dir(),
     InitializeFile = filename:join(PWD, ?INITIALIZED_FILE),
     ?DEBUG("Initialize File: ~p~n", [InitializeFile]),
     InitializeFile.

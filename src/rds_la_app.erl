@@ -38,7 +38,7 @@ init_metastore_disc(Nodes) ->
     end.
 
 terminate_metastore_disc(Nodes) ->
-    metastore_mnesia:terminate(Nodes).
+    metastore_mnesia:terminate(Nodes, rds_la_metastore).
 
 init_metastore_readonly(ExtraNodes) ->
     metastore_mnesia:init_read_only(ExtraNodes, rds_la_metastore).

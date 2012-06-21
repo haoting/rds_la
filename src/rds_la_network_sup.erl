@@ -86,12 +86,12 @@ services_specs()->
 
 rds_la_controller_back_sup_spec(ListenPort) ->
     ?CHILD3(rds_la_controller_back_sup, supervisor, back_proxy_api, start_link_listener_sup, 
-			[?CONTROLLER_PREFIX, tcp, "0", ListenPort, rds_la_controller_protocol, [[]],
+			[?CONTROLLER_PREFIX, tcp, "0", ListenPort, rds_la_controller_protocol, [undefined],
              [{packet, ?PACKET_LEN}, {active, ?ACTIVE}]]).
 
 rds_la_store_back_sup_spec(ListenPort) ->
     ?CHILD3(rds_la_store_back_sup, supervisor, back_proxy_api, start_link_listener_sup, 
-			[?STORE_PREFIX, tcp, "0", ListenPort, rds_la_store_protocol, [[]],
+			[?STORE_PREFIX, tcp, "0", ListenPort, rds_la_store_protocol, [],
              [{packet, ?PACKET_LEN}, {active, ?ACTIVE}]]).
 
 rds_la_controller_monitor_sup_spec() ->

@@ -38,7 +38,7 @@ start_link() ->
     start_link(Users).
 
 start_link(Users) ->
-    Dir = rds_la_config:la_dir(),
+    Dir = rds_la_config:la_store_dir(),
     ok = filelib:ensure_dir(Dir ++ "/"),
     Indexers = rds_la_config:la_indexers(),
     ProxyIdList = rds_la_config:proxy_id_list(),

@@ -24,6 +24,7 @@ read_file_term(FileName) ->
     end.
 
 write_file_term(FileName, Term) ->
+    ok = filelib:ensure_dir(FileName),
     file:write_file(FileName, term_to_binary(Term)).
 
 recursive_copy(Src, Dest) ->
@@ -77,4 +78,3 @@ recursive_del(Dir) ->
 %%
 %% Local Functions
 %%
-

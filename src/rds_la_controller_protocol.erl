@@ -21,11 +21,13 @@
 
 -export([update_user_nodes/2]).
 
--record(pstate, {controller_dstnp_list = [], last_state = default}).
+-record(pstate, {controller_dstnp_list = [], last_state = default, aping_timer}).
 
 -define(SERVER, rds_la_controller_client).
 -define(USER_APPEND_DSTNP_CACHE, user_append_dstnp_cache).
 -define(USER_QUERY_DSTNP_CACHE, user_query_dstnp_cache).
+%-define(APING_CONTROLLER_INTERVAL, 30 * 60 * 1000). %% 30 minutes
+-define(APING_CONTROLLER_INTERVAL,      20 * 1000). %% 20 seconds for test
 
 %%
 %% API Functions
@@ -41,7 +43,6 @@ new_controller_client(Prefix) ->
     end,
     {ok, Pid}.
 
-%% TODO: adjust all functions which called rds_la_api:* and rds_la_config:* at client point
 default_user_props() -> rds_la_api:default_user_props().
 
 %% for client
@@ -91,16 +92,19 @@ update_user_nodes(Pid, User) ->
 
 %% Initialize
 init([ControllerDstNPList]) ->
-    NControllerDstNPList = case ControllerDstNPList of
-        [] -> [];
+    case ControllerDstNPList of
+        undefined ->
+            % for controller
+            {ok, #pstate{}};
         _ ->
+            % for client
+            TRef = back_proxy:add_timer(?APING_CONTROLLER_INTERVAL, aping_controller),
+            init_user_append_dstnp_cache(),
+            init_user_query_dstnp_cache(),
             Nth = random_in(length(ControllerDstNPList)),
             {Tail, Head} = lists:split(Nth, ControllerDstNPList),
-            Head ++ Tail
-    end,
-    init_user_append_dstnp_cache(),
-    init_user_query_dstnp_cache(),
-    {ok, #pstate{controller_dstnp_list = NControllerDstNPList}}.
+            {ok, #pstate{controller_dstnp_list = Head ++ Tail, aping_timer = TRef}}
+    end.
 
 %% Terminate
 terminate(_Reason, _ModState) ->
@@ -118,6 +122,20 @@ handle_nowait(ModState) ->
     {wait_msg, ModState}.
 
 %% Timer
+%% for client
+handle_timer(aping_controller, ModState = #pstate{last_state = LastState}) ->
+    TRef = back_proxy:add_timer(?APING_CONTROLLER_INTERVAL, aping_controller),
+    NModState = ModState#pstate{aping_timer = TRef},
+    % Because handle_local_controller_async may close the socket of current controller,
+    % and if there is any call in-flight, protocol will never receive msg of connection_down,
+    % the client will block forever.
+    % The call process will check connection with controller automaticlly
+    case LastState of
+        default ->
+            handle_local_controller_async(aping, NModState);
+        _ -> {wait_msg, NModState}
+    end;
+
 handle_timer(_TimerMsg, ModState) ->
     {wait_msg, ModState}.
 
@@ -169,6 +187,10 @@ handle_remote(_From, ping, ModState) ->
     reply_remote_term(pong, ModState);
 
 %% for controller
+handle_remote(_From, aping, ModState) ->
+    {wait_msg, ModState};
+
+%% for controller
 handle_remote(_From, {add_user, User, Props}, ModState) ->
     Res = rds_la_controller:add_user(User, Props),
     reply_remote_term(Res, ModState);
@@ -178,18 +200,21 @@ handle_remote(_From, {del_user, User}, ModState) ->
     Res = rds_la_controller:del_user(User),
     reply_remote_term(Res, ModState);
 
+
 %% for client
 handle_remote(_From, {reply, Reply}, ModState) ->
     reply_local(Reply, ModState);
 
 %% for controller
 handle_remote(_From, {get_user_nodes, User}, ModState) ->
+    timer:sleep(20 * 1000),                                %% for test
     UserNodes = case rds_la_api:get_user_nodes(User) of
         {error, _Reason} -> [];
         UN -> UN
     end,
     UserDstNPs = user_nodes_to_dstnps(UserNodes),
-    reply_remote_binary(term_to_binary({reply_user_nodes, User, UserDstNPs}), ModState);
+    reply_remote_binary(term_to_binary({reply_user_nodes, User, UserDstNPs}),
+        ModState#pstate{last_state = default});
 
 %% for client
 handle_remote(_From, {reply_user_nodes, User, UserNodes}, ModState) ->
@@ -255,12 +280,21 @@ handle_local_sync(DstNP, Term, ModState) ->
 handle_local_controller_sync(Term, ModState = #pstate{controller_dstnp_list = ControllerDstNPList}) ->
     Binary = term_to_binary(Term),
     case handle_local_controller(Binary, ControllerDstNPList) of
-        {error, Reason} -> {{reply, {error, Reason}}, ModState};
+        {error, Reason} ->
+            {{reply, {error, Reason}}, ModState#pstate{last_state = default}};
         ok ->
             {wait_msg, ModState#pstate{last_state = {multi_call, Term}}};
         {ok, NControllerDstNP} ->
             {wait_msg, ModState#pstate{controller_dstnp_list = NControllerDstNP,
                                        last_state = {multi_call, Term}}}
+    end.
+
+handle_local_controller_async(Term, ModState = #pstate{controller_dstnp_list = ControllerDstNPList}) ->
+    Binary = term_to_binary(Term),
+    case handle_local_controller(Binary, ControllerDstNPList) of
+        {ok, NControllerDstNP} ->
+            {wait_msg, ModState#pstate{controller_dstnp_list = NControllerDstNP}};
+        _ -> {wait_msg, ModState}
     end.
 
 handle_local_controller(Binary, [DstNP|ControllerDstNPList]) ->

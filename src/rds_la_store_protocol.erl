@@ -21,6 +21,8 @@
 
 -record(pstate, {last_query_type_condition, left_query_dstnps = 0, query_from_dstnps = dict:new()}).
 
+-define(HEAP_SIZE, 2 * 1024 * 1024).
+-define(BIN_VHEAP_SIZE, 4 * 1024 * 1024).
 %%
 %% API Functions
 %%
@@ -36,7 +38,10 @@ query_user_sql_stats(Pid, User, DateStart, DateEnd, PageStart, PageEnd) ->
     Condition = {DateStart, DateEnd, PageStart, PageEnd},
     back_proxy:local_call(Pid, {query_user_log_sync, User, sql_stats, Condition}).
 
-init(_ModArg) -> 
+init(_ModArg) ->
+    process_flag(min_heap_size, ?HEAP_SIZE),
+    process_flag(min_bin_vheap_size, ?BIN_VHEAP_SIZE),
+    process_flag(priority, high),
     {ok, #pstate{}}.
 
 terminate(_Reason, _ModState) ->
@@ -86,6 +91,7 @@ handle_local({append_user_log_async, User, ProxyId, Record}, ModState) ->
     end;
 
 handle_local({query_user_log_sync, User, Type, Condition}, ModState) ->
+%    timer:sleep(20 * 1000),                                %% for test
     case rds_la_controller_protocol:get_user_query_dstnps(User) of
         [] -> reply_local({error, no_query_nodes}, ModState);
         QueryDstNPs ->
