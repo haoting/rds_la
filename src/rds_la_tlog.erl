@@ -163,7 +163,6 @@ init([Dir,Name,Config]) ->
            fileinfos = [],
            config = Config,
            readers = dict:new() },
-    init_async_writes(),
     gen_server:cast(self(), init),
     {ok, State}.
 
@@ -221,7 +220,7 @@ handle_call(init_done, _From, State) ->
 
 handle_call({register_reader,RRef}, _From, State = #state{writer = Writer}) ->
     ReadScope = get_read_scope(State),
-    sync_writer(Writer),
+    sync_writerx(Writer),
     {reply, {ok,ReadScope}, register_reader(State, RRef, ReadScope)};
 
 handle_call({unregister_reader,RRef}, _From, State) ->
@@ -238,10 +237,6 @@ handle_call({write, TimeStamp, Term}, _From, State) ->
 
 handle_call(_Event, _From, State)  ->
     {reply, ok, State}.
-
-handle_info({_Port, {data, _Data}}, State) ->
-    dec_async_writes(),
-    {noreply, State};
 
 handle_info(collect, State) ->
     State1 = 
@@ -271,25 +266,30 @@ open_writerx(Dir, Name, Num, LastTermId, Config) ->
     MaxDatFileSize = proplists:get_value(max_datfile_size, Config,
                                          ?DEFAULT_MAX_DATFILE_SIZE),
     #writer{ num = Num,
-             datfd = open_file(Dir, Name, Num, ?DAT, [append, delayed_write]),
-             idxfd = open_idx(Dir, Name, [append]),
+             datfd = bitcask_nifs_open_file(Dir, Name, Num, ?DAT, [append]),
+             idxfd = bitcask_nifs_open_idx(Dir, Name, [append]),
              last_termid = LastTermId,
              max_datfile_size = MaxDatFileSize
            }.
 
 close_writerx(Writer) ->
     #writer{datfd = Datfd, idxfd = Idxfd} = Writer,
-    ok = file:close(Datfd),
-    ok = file:close(Idxfd).
+    ok = bitcask_nifs_close_file(Datfd),
+    ok = bitcask_nifs_close_file(Idxfd).
 
 reopen_writerx(Writer, Dir, Name, Num) ->
-    sync_writer(Writer),
+    sync_writerx(Writer),
     ?DEBUG("Writer Synced~n", []),
-    file:close(Writer#writer.datfd),
+    bitcask_nifs_close_file(Writer#writer.datfd),
     ?DEBUG("Close Old Data Fd: ~p~n", [Writer#writer.datfd]),
-    NDatfd = open_file(Dir, Name, Num, ?DAT, [append, delayed_write]),
+    NDatfd = bitcask_nifs_open_file(Dir, Name, Num, ?DAT, [append]),
     ?DEBUG("Opened New Data Fd: ~p~n", [NDatfd]),
     Writer#writer{ num = Num, datfd = NDatfd}.
+
+sync_writerx(#writer{datfd = Datfd, idxfd = Idxfd}) ->
+    bitcask_nifs_sync(Datfd),
+    bitcask_nifs_sync(Idxfd),
+    ok.
 
 writex(State = #state{writer = Writer}, TimeStamp, Term) ->
     #writer{num = Num,
@@ -303,7 +303,7 @@ writex(State = #state{writer = Writer}, TimeStamp, Term) ->
         if TimeStamp =:= LastTS ->
                make_termid(LastTS, LastNO + 1);
            TimeStamp > LastTS ->
-               ok = write_idx(Idxfd, TimeStamp, Num, Offset),
+               ok = bitcask_nifs_write_idx(Idxfd, TimeStamp, Num, Offset),
                make_termid(TimeStamp, 0);
            true ->
                ?DEBUG("message ~p arrive out of order in file ~p/~p , omit", 
@@ -314,56 +314,11 @@ writex(State = #state{writer = Writer}, TimeStamp, Term) ->
     case TermId of
         out_of_order -> {State, out_of_order};
         _ ->
-            Delta = write_file(Datfd, TermId, Term),
+            Delta = bitcask_nifs_write_file(Datfd, TermId, Term),
             Writer1 = Writer#writer{last_num = Num, last_offset = Offset, last_termid = TermId},
             State1 = update_last_fileinfo(State, Delta, TermId),
             {may_split(State1#state{writer = Writer1}), {ok, TermId}}
     end.
-
-%% here is a sync point:
-%% async write | [no other file operation] | sync point | sync other file operation
-%% there are 3 point need to sync:
-%% 1. open reader
-%%    async write | sync point | open reader
-%% 2. collect
-%%    async write | sync point | collect
-%% 3. reopen writer
-%%    async write | sync point | reopen writer
-%% different the msg of write & sync by:
-%% prim_file:sync     send [9]            recv [0]
-%% prim_file:write    send [4, Binary]    recv [3, WriteSize]
-%% here we must filter all write msg of [3, WriteSize] until we get a sync msg [0]
-
-init_async_writes() ->
-    put(async_writes, 0).
-
-inc_async_writes() ->
-    N = get(async_writes),
-    put(async_writes, N + 1).
-
-dec_async_writes() ->
-    N = get(async_writes),
-    put(async_writes, N - 1).
-
-sync_write_msgs() ->
-    AWs = get(async_writes),
-    %?DEBUG("AWs: ~p~n", [AWs]),
-    sync_write_msgs(AWs),
-    init_async_writes().
-
-sync_write_msgs(0) ->
-    ok;
-sync_write_msgs(N) ->
-    receive
-        {_Port, {data, _Data}} ->
-           sync_write_msgs(N - 1) 
-    end.
-
-sync_writer(#writer{datfd = Datfd, idxfd = Idxfd}) ->
-    sync_write_msgs(),
-    file:sync(Datfd),
-    file:sync(Idxfd),
-    ok.
 
 %termid_to_timestamp(TermId) -> TermId#termid.timestamp.
 
@@ -626,9 +581,9 @@ check_datfd(Dir, Name, Num, Fd, FileInfo = #fileinfo{size = Size}) ->
 %%% clean aged records
 collect(State) ->
     #state{dir = Dir, name = Name,
-           config = _Config, fileinfos = FileInfos, writer = Writer} = State,
+           config = _Config, fileinfos = FileInfos} = State,
     MaxKeptDays = rds_la_config:la_log_max_kept_days(),
-    CurrentTimeStamp = rds_la_lib:current_timestamp(),
+    CurrentTimeStamp = rds_la_lib:universal_to_seconds(erlang:localtime()),
     OldTimeStamp = CurrentTimeStamp - MaxKeptDays*3600*24,
     
     case FileInfos of
@@ -647,7 +602,6 @@ collect(State) ->
             case RFileInfos1 of
                 [] -> ok;
                 _ ->
-                    sync_writer(Writer),
                     [
                      begin
                          FileName = filename:join(Dir,filenum_to_name(Name, ?DAT, Num)),
@@ -688,12 +642,6 @@ open_file(Dir, Name, Num, Type, Modes) ->
             throw(unknown_error)
     end.
 
-write_file(Fd, #termid{timestamp = TS, number = NO}, Term) ->
-    Binary = term_to_binary(Term),
-    Size = byte_size(Binary),
-    ok = write_to_file(Fd, <<TS:32, NO:32, Size:32, Binary/binary, 255:8>>),
-    Size + 13.
-
 scan_file(Fd) ->
     try case file:read(Fd, 4) of
             {ok, <<TS:32>>} ->
@@ -722,8 +670,6 @@ read_file(Fd) ->
         C:E -> {error, {C,E}}
     end.
 
-
-
 %%% handle idx file
 
 idx_filename(Dir, Name) ->
@@ -739,37 +685,6 @@ open_idx(Dir, Name, Modes) ->
         {error, Reason} ->
             throw({tlog_open_idx_error, Dir, Name, Reason})
     end.
-
-write_idx(Fd, TimeStamp, Num, Offset) ->
-    write_to_file(Fd, <<TimeStamp:32, Num:32, Offset:64>>).
-
-%% ---------------- only for write file async ----------------
-file_drv_command(Port, Command, Validated) when is_port(Port) ->
-    try erlang:port_command(Port, Command) of
-        true -> true
-    catch
-        error:badarg when Validated -> {error, einval};
-        error:badarg ->
-            try erlang:iolist_size(Command) of
-                _ -> {error, einval}
-            catch
-                error:_ -> {error, badarg}
-            end;
-        error:Reason -> {error, Reason}
-    end.
-
-write_to_file(Fd, WriteBuf) ->
-    write_to_file(Fd, WriteBuf, split_step).
-
-write_to_file(Fd, WriteBuf, common) ->
-    file:write(Fd, WriteBuf),
-    ok;
-write_to_file(#file_descriptor{data = {Port, _FD}}, WriteBuf, split_step) ->
-    inc_async_writes(),
-    file_drv_command(Port, [?FILE_WRITE, WriteBuf], true),
-    ok.
-
-%% -----------------------------------------------------------
 
 find_idx(Fd, TimeStamp) ->
     case read_idx(Fd) of
@@ -789,3 +704,52 @@ read_idx(Fd) ->
    catch
        C:E -> {error, {C,E}}
    end.
+
+%% -----------------------------------------------------------
+
+bitcask_nifs_open_file(Dir, Name, Num, Type, Modes) ->
+    Path = filename:join(Dir, filenum_to_name(Name, Type, Num)),
+    ?DEBUG("Open file: ~p~n", [Path]),
+    case bitcask_nifs:file_open(Path, Modes) of
+        {ok, Fd} -> Fd;
+        {error, Reason} ->
+            ?DEBUG("Failed Open for ~p~n", [Reason]),
+            throw({tlog_open_file_error, Path, Modes, Reason});
+        Other ->
+            ?DEBUG("Other: ~p~n", [Other]),
+            throw(unknown_error)
+    end.
+
+bitcask_nifs_open_idx(Dir, Name, Modes) ->
+    Path = idx_filename(Dir, Name),
+    case bitcask_nifs:file_open(Path, Modes) of
+        {ok, Fd} -> Fd;
+        {error, Reason} ->
+            throw({tlog_open_idx_error, Dir, Name, Reason})
+    end.
+
+bitcask_nifs_close_file(FD) ->
+    bitcask_nifs:file_close(FD).
+
+bitcask_nifs_write(FD, Binary) ->
+    bitcask_nifs:file_write(FD, Binary).
+
+%bitcask_nifs_read(FD, Size) ->
+%    case bitcask_nifs:file_read(FD, Size) of
+%        {ok, Content} -> {ok, Content};
+%        eof -> {error, eof};
+%        {error, Reason} -> {error, Reason}
+%    end.
+            
+bitcask_nifs_sync(FD) ->
+    bitcask_nifs:file_sync(FD).
+
+bitcask_nifs_write_idx(Fd, TimeStamp, Num, Offset) ->
+    bitcask_nifs_write(Fd, <<TimeStamp:32, Num:32, Offset:64>>).
+
+bitcask_nifs_write_file(Fd, #termid{timestamp = TS, number = NO}, Term) ->
+    Binary = term_to_binary(Term),
+    Size = byte_size(Binary),
+    ok = bitcask_nifs_write(Fd, <<TS:32, NO:32, Size:32, Binary/binary, 255:8>>),
+    Size + 13.
+

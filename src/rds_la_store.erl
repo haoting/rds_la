@@ -91,13 +91,15 @@ append_log_async(User, ProxyId, Record) ->
 	end.
 
 append_log_async(User, Node, ProxyId, Record) ->
-    cast(Node, {append_log, User, ProxyId, Record}).
+    {NProxyId, NRecord} = la_log_hack(ProxyId, Record),
+    cast(Node, {append_log, User, NProxyId, NRecord}).
 
 append_log_sync(User, ProxyId, Record) ->
     append_log_sync(User, node(), ProxyId, Record).
 
 append_log_sync(User, Node, ProxyId, Record) ->
-    call(Node, {append_log, User, ProxyId, Record}).
+    {NProxyId, NRecord} = la_log_hack(ProxyId, Record),
+    call(Node, {append_log, User, NProxyId, NRecord}).
 
 find_user_handler(User) ->
     case get({user_handler, User}) of
