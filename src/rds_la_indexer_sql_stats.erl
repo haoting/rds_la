@@ -33,8 +33,14 @@ merge_index(#sql_stats_state{tree = Tree1}, #sql_stats_state{tree = Tree2}) ->
     #sql_stats_state{tree = merge(Tree1, Tree2)}.
 
 query_index(#sql_stats_state{tree = Tree}, QueryOpts) ->
-    PageStart = proplists:get_value(page_start, QueryOpts, 1),
-    PageSize = proplists:get_value(page_size, QueryOpts, ?DEFAULT_PAGE_SIZE),
+    PageStart = case proplists:get_value(page_start, QueryOpts, 1) of
+        undefined -> 1;
+        PS -> PS
+    end,
+    PageSize = case proplists:get_value(page_size, QueryOpts, ?DEFAULT_PAGE_SIZE) of
+        undefined -> ?DEFAULT_PAGE_SIZE;
+        PE -> PE
+    end,
     Res = to_list(Tree),
     ResSize = gb_trees:size(Tree),
     case PageStart > ResSize of
