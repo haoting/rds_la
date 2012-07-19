@@ -101,7 +101,7 @@ append_log_sync(User, Node, ProxyId, Record) ->
     {NProxyId, NRecord} = la_log_hack(ProxyId, Record),
     call(Node, {append_log, User, NProxyId, NRecord}).
 
-find_user_handler(User) ->
+find_user_handler_with_cache(User) ->
     case get({user_handler, User}) of
         undefined ->
             case get_user_handler(User) of
@@ -117,6 +117,20 @@ find_user_handler(User) ->
                     {ok, UserHandler}
             end;
         UserHandler -> {ok, UserHandler}
+    end.
+
+find_user_handler(User) ->
+    case get_user_handler(User) of
+        no_handler ->
+            case call({find_user_handler, User}) of
+                {ok, UserHandler} ->
+                    put({user_handler, User}, UserHandler),
+                    {ok, UserHandler};
+                {error, Reason} -> {error, Reason}
+            end;
+        UserHandler ->
+            put({user_handler, User}, UserHandler),
+            {ok, UserHandler}
     end.
 
 query_log(User, Type, Condition) ->
