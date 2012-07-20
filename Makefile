@@ -9,7 +9,7 @@ clean:
 	@$(REBAR) clean
 	@rm -f test/*.beam
 	@rm -f -r logs rel/rds_la
-	@rm -f -r deps
+	@rm -f -r deps/*
 
 build_plt:
 	-@dialyzer -pa deps/mochiweb/ebin --build_plt \
